@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FitTrack</title>
+  <meta name="theme-color" content="#0ea5e9" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="FitTrack" />
+  <style>
+    :root{--bg:#0b1220;--card:#121a2b;--muted:#94a3b8;--text:#e5e7eb;--accent:#0ea5e9;--accent2:#22c55e;--danger:#ef4444}
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,#0b1220,#0b1220 40%,#0e1729);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial}
+    header{position:sticky;top:0;backdrop-filter:saturate(140%) blur(8px);background:rgba(11,18,32,.7);border-bottom:1px solid rgba(148,163,184,.15);z-index:10}
+    .wrap{max-width:1000px;margin:0 auto;padding:16px}
+    h1{margin:0;font-size:20px;letter-spacing:.5px}
+    .grid{display:grid;gap:16px}
+    @media(min-width:980px){.grid{grid-template-columns:1.15fr .85fr}}
+    .card{background:var(--card);border:1px solid rgba(148,163,184,.16);border-radius:16px;box-shadow:0 10px 30px rgba(2,6,23,.4)}
+    .card .hd{padding:14px 16px;border-bottom:1px solid rgba(148,163,184,.14);display:flex;align-items:center;gap:10px}
+    .card .bd{padding:16px}
+    label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+    input[type="text"], input[type="number"], input[type="date"], select, textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(148,163,184,.25);background:#0b1322;color:var(--text)}
+    input[type="number"]{appearance:textfield}
+    button{appearance:none;border:0;padding:10px 14px;border-radius:10px;cursor:pointer;color:white;background:var(--accent)}
+    button.ghost{background:transparent;border:1px solid rgba(148,163,184,.25);color:var(--text)}
+    button.success{background:var(--accent2)}
+    button.danger{background:var(--danger)}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .row > *{flex:1}
+    .muted{color:var(--muted)}
+    .pill{font-size:12px;padding:4px 8px;border-radius:999px;background:rgba(14,165,233,.12);color:#7dd3fc;border:1px solid rgba(125,211,252,.2)}
+    .list{display:flex;flex-direction:column;gap:12px}
+    .workout{border:1px solid rgba(148,163,184,.2);border-radius:14px;padding:12px;background:#0b1322}
+    details summary{cursor:pointer;list-style:none}
+    details summary::-webkit-details-marker{display:none}
+    .set-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:center}
+    .ex-box{border:1px dashed rgba(148,163,184,.3);border-radius:12px;padding:12px;background:rgba(2,6,23,.4)}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap}
+    .right{margin-left:auto}
+    .footer{padding:20px;color:var(--muted);text-align:center}
+    .link{color:#93c5fd;text-decoration:none}
+    .ring{position:relative;width:86px;height:86px}
+    .ring svg{transform:rotate(-90deg)}
+    .ring .time{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600}
+    /* Chart area */
+    #chartWrap{display:grid;gap:10px}
+    #volCanvas{width:100%;height:180px;display:block;background:#0b1322;border-radius:12px}
+    .pr-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .pr{background:#0b1322;border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:10px}
+  </style>
+  <script>
+    // Inline PWA bits to keep single-file
+    (function makePWA(){
+      const manifest = {name:'FitTrack',short_name:'FitTrack',display:'standalone',start_url:'.',background_color:'#0b1220',theme_color:'#0ea5e9',icons:[]};
+      const manifestURL = URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/json'}));
+      const link=document.createElement('link'); link.rel='manifest'; link.href=manifestURL; document.head.appendChild(link);
+      const swCode=`self.addEventListener('install',e=>{e.waitUntil(caches.open('fittrack-v2').then(c=>c.addAll(['./'])))});
+self.addEventListener('fetch',e=>{e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)))})`;
+      if('serviceWorker' in navigator){ navigator.serviceWorker.register(URL.createObjectURL(new Blob([swCode],{type:'text/javascript'}))).catch(()=>{}); }
+    })();
+  </script>
+</head>
+<body>
+  <header>
+    <div class="wrap row">
+      <h1>🏋️‍♀️ FitTrack</h1>
+      <span class="pill right">Offline‑ready</span>
+    </div>
+  </header>
+
+  <main class="wrap grid" id="app">
+    <section class="card">
+      <div class="hd"><strong>New workout</strong></div>
+      <div class="bd">
+        <div class="row">
+          <div style="flex:0.8">
+            <label for="date">Date</label>
+            <input id="date" type="date" />
+          </div>
+          <div>
+            <label for="note">Notes (optional)</label>
+            <input id="note" type="text" placeholder="e.g. Push day, felt strong" />
+          </div>
+        </div>
+
+        <div class="ex-box" id="rest-timer" style="margin:12px 0">
+          <div class="row">
+            <div>
+              <label>Rest timer</label>
+              <div class="row" style="gap:8px">
+                <select id="restPreset">
+                  <option value="30">30s</option>
+                  <option value="60" selected>60s</option>
+                  <option value="90">90s</option>
+                  <option value="120">120s</option>
+                </select>
+                <input id="restCustom" type="number" min="1" step="1" placeholder="Custom (sec)" />
+                <button id="restStart" type="button">Start</button>
+                <button id="restPause" class="ghost" type="button">Pause</button>
+                <button id="restReset" class="ghost" type="button">Reset</button>
+                <div class="ring" id="restRing" style="flex:0 0 auto">
+                  <svg width="86" height="86">
+                    <circle cx="43" cy="43" r="38" stroke="rgba(125,211,252,.2)" stroke-width="6" fill="none"></circle>
+                    <circle id="ringProg" cx="43" cy="43" r="38" stroke="#0ea5e9" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="238" stroke-dashoffset="238"></circle>
+                  </svg>
+                  <div class="time" id="restDisplay">01:00</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="exercises"></div>
+
+        <div class="toolbar" style="margin-top:12px">
+          <button id="addExerciseBtn" type="button">+ Add exercise</button>
+          <span class="muted">Tip: track reps, sets, and weight per set.</span>
+          <span class="right"></span>
+          <button id="saveBtn" class="success" type="button">Save workout</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="hd row"><strong>Insights</strong><span class="right muted" id="insightHint">Auto updates from your history</span></div>
+      <div class="bd" id="chartWrap">
+        <div>
+          <label>Total volume by workout</label>
+          <canvas id="volCanvas" width="900" height="220"></canvas>
+        </div>
+        <div>
+          <label>Exercise PR highlights</label>
+          <div class="pr-grid" id="prGrid"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="hd row"><strong>History</strong>
+        <span class="right toolbar">
+          <button id="exportBtn" class="ghost" type="button">Export JSON</button>
+          <label class="ghost" style="display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid rgba(148,163,184,.25);cursor:pointer">
+            Import
+            <input id="importInput" type="file" accept="application/json" style="display:none" />
+          </label>
+          <button id="clearBtn" class="danger" type="button">Clear all</button>
+        </span>
+      </div>
+      <div class="bd">
+        <div id="history" class="list"></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="footer">Add to Home Screen in Safari: Share → <strong>Add to Home Screen</strong>. <a class="link" href="#" id="installHelp">Need help?</a></div>
+
+  <template id="exercise-tpl">
+    <div class="ex-box" data-exercise>
+      <div class="row" style="margin-bottom:10px">
+        <div>
+          <label>Exercise</label>
+          <select data-ex-name></select>
+          <input type="text" placeholder="Custom exercise" data-ex-custom style="display:none;margin-top:6px" />
+        </div>
+        <div style="flex:0 0 auto;align-self:flex-end" class="toolbar">
+          <button type="button" class="ghost" data-add-set>+ Set</button>
+          <button type="button" class="danger" data-remove-ex>Remove</button>
+        </div>
+      </div>
+      <div class="set-grid" data-sets></div>
+    </div>
+  </template>
+
+  <template id="set-row-tpl">
+    <div class="row" data-set style="gap:10px">
+      <div>
+        <label>Reps</label>
+        <input type="number" min="0" step="1" placeholder="10" data-reps />
+      </div>
+      <div>
+        <label>Weight</label>
+        <input type="number" min="0" step="0.5" placeholder="60" data-weight />
+      </div>
+      <div style="flex:0 0 auto;align-self:flex-end" class="toolbar">
+        <button type="button" class="ghost" data-start-rest>Rest</button>
+        <button type="button" class="ghost" data-remove-set>✕</button>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    const storeKey = 'fittrack.workouts.v2';
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+    const EXERCISES = [
+      'Bench Press','Incline Bench Press','Overhead Press','Dumbbell Press','Dumbbell Fly','Lateral Raise',
+      'Barbell Row','Dumbbell Row','Lat Pulldown','Pull-Up','Chin-Up','Face Pull',
+      'Squat','Front Squat','Deadlift','Romanian Deadlift','Leg Press','Leg Extension','Leg Curl','Calf Raise',
+      'Hip Thrust','Glute Bridge','Plank','Crunches','Hanging Leg Raise','Russian Twist','Burpee'
+    ];
+
+    // ===== Utilities =====
+    function todayISO(){
+      const d = new Date();
+      const tzOffset = d.getTimezoneOffset();
+      const local = new Date(d.getTime() - tzOffset*60000);
+      return local.toISOString().split('T')[0];
+    }
+    function load(){ try { return JSON.parse(localStorage.getItem(storeKey)) || []; } catch(e){ return []; } }
+    function save(all){ localStorage.setItem(storeKey, JSON.stringify(all)); }
+    function escapeHtml(str){ return (str||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+    // ===== Rest Timer with ring =====
+    const timer = { dur:60, left:60, t:null, running:false };
+    const CIRC  = 238; // stroke length for r=38
+    function fmt(sec){ sec = Math.max(0, Math.round(sec)); const m = Math.floor(sec/60), s = sec%60; return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
+    function beep(){ try{ const ctx = new (window.AudioContext||window.webkitAudioContext)(); const o=ctx.createOscillator(), g=ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.type='sine'; o.frequency.value=880; g.gain.value=0.05; o.start(); setTimeout(()=>{o.stop();ctx.close();},350);}catch(e){} if('vibrate' in navigator) navigator.vibrate(200); }
+    function updateRing(){ const p = timer.dur ? (timer.dur - timer.left)/timer.dur : 0; const off = CIRC * (1-p); const el = $('#ringProg'); if(el){ el.setAttribute('stroke-dashoffset', String(off)); } }
+    function updateTimerUI(){ $('#restDisplay').textContent = fmt(timer.left); updateRing(); }
+    function setDuration(sec){ timer.dur = timer.left = Number(sec)||60; updateTimerUI(); }
+    function startTimer(){ if(timer.running) return; timer.running = true; const end = Date.now()+timer.left*1000; (function tick(){ if(!timer.running) return; timer.left = Math.max(0, Math.ceil((end-Date.now())/1000)); updateTimerUI(); if(timer.left<=0){ pauseTimer(); timer.left=0; updateTimerUI(); beep(); return; } timer.t=setTimeout(tick,250); })(); }
+    function pauseTimer(){ timer.running=false; if(timer.t){ clearTimeout(timer.t); timer.t=null; } }
+    function resetTimer(){ pauseTimer(); timer.left = timer.dur; updateTimerUI(); }
+
+    // ===== Exercise UI =====
+    function buildExerciseSelect(sel){
+      sel.innerHTML = '';
+      const first = document.createElement('option'); first.value=''; first.textContent='Select exercise…'; sel.appendChild(first);
+      for(const name of EXERCISES){ const o=document.createElement('option'); o.value=name; o.textContent=name; sel.appendChild(o); }
+      const custom = document.createElement('option'); custom.value='__custom__'; custom.textContent='Custom…'; sel.appendChild(custom);
+    }
+
+    function addExerciseUI(){
+      const tpl = $('#exercise-tpl').content.cloneNode(true);
+      const ex = tpl.querySelector('[data-exercise]');
+      const sets = ex.querySelector('[data-sets]');
+      const addSetBtn = ex.querySelector('[data-add-set]');
+      const removeExBtn = ex.querySelector('[data-remove-ex]');
+      const sel = ex.querySelector('[data-ex-name]');
+      const custom = ex.querySelector('[data-ex-custom]');
+
+      buildExerciseSelect(sel);
+      sel.addEventListener('change', ()=>{ custom.style.display = sel.value==='__custom__' ? '' : 'none'; if(sel.value!=='__custom__') custom.value=''; });
+
+      function addSet(){
+        const row = $('#set-row-tpl').content.cloneNode(true);
+        const setEl = row.querySelector('[data-set]');
+        setEl.querySelector('[data-remove-set]').addEventListener('click', ()=> setEl.remove());
+        setEl.querySelector('[data-start-rest]').addEventListener('click', ()=>{
+          const customSec = Number($('#restCustom').value||0);
+          setDuration(customSec>0?customSec:Number($('#restPreset').value||60));
+          resetTimer(); startTimer();
+        });
+        sets.appendChild(row);
+      }
+
+      addSet();
+      addSetBtn.addEventListener('click', addSet);
+      removeExBtn.addEventListener('click', ()=> ex.remove());
+
+      $('#exercises').appendChild(tpl);
+    }
+
+    // ===== History & Save =====
+    function gatherForm(){
+      const date = $('#date').value || todayISO();
+      const note = $('#note').value.trim();
+      const exercises = $$('#exercises [data-exercise]').map(ex=>{
+        const sel = $('[data-ex-name]', ex);
+        const custom = $('[data-ex-custom]', ex);
+        const name = (sel.value==='__custom__' ? custom.value : sel.value).trim();
+        const setRows = $$('[data-set]', ex);
+        const setsData = setRows.map(row=>({
+          reps: Number($('[data-reps]', row).value || 0),
+          weight: Number($('[data-weight]', row).value || 0)
+        })).filter(s=>s.reps>0 || s.weight>0);
+        return { name, sets: setsData };
+      }).filter(e=>e.name && e.sets.length);
+      return { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), date, note, exercises };
+    }
+
+    function renderHistory(){
+      const container = $('#history'); container.innerHTML='';
+      const data = load();
+      if(!data.length){ container.innerHTML = '<div class="muted">No workouts yet. Create one on the left and hit "Save".</div>'; drawVolumeChart([]); $('#prGrid').innerHTML=''; return; }
+      data.sort((a,b)=> b.date.localeCompare(a.date));
+      for(const w of data){
+        const root = document.createElement('div'); root.className='workout';
+        const totalSets = w.exercises.reduce((acc,e)=>acc+e.sets.length,0);
+        const totalVol = workoutVolume(w);
+        root.innerHTML = `
+          <details>
+            <summary class="row" style="gap:8px">
+              <strong>${w.date}</strong>
+              <span class="muted">${w.note ? w.note : ''}</span>
+              <span class="right pill">${w.exercises.length} exercises • ${totalSets} sets • ${totalVol} vol</span>
+            </summary>
+            <div style="margin-top:10px">
+              ${w.exercises.map(e=>`
+                <div style="margin:8px 0">
+                  <div><strong>${escapeHtml(e.name)}</strong></div>
+                  <table style="width:100%;border-collapse:collapse;margin-top:6px">
+                    <thead><tr class="muted"><th style="text-align:left;padding:6px">Set</th><th style="text-align:left;padding:6px">Reps</th><th style="text-align:left;padding:6px">Weight</th><th style="text-align:left;padding:6px">Est.1RM</th></tr></thead>
+                    <tbody>
+                      ${e.sets.map((s,i)=>{
+                        const one = estOneRM(s.weight, s.reps);
+                        return `<tr><td style="padding:6px">${i+1}</td><td style="padding:6px">${s.reps}</td><td style="padding:6px">${s.weight}</td><td style="padding:6px">${one}</td></tr>`
+                      }).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `).join('')}
+            </div>
+          </details>
+          <div class="toolbar" style="margin-top:8px">
+            <button class="ghost" data-edit>Edit</button>
+            <button class="danger" data-delete>Delete</button>
+          </div>`;
+        root.querySelector('[data-delete]').addEventListener('click', ()=>{
+          const all = load(); const idx = all.findIndex(x=>x.id===w.id);
+          if(idx>-1){ all.splice(idx,1); save(all); renderHistory(); }
+        });
+        root.querySelector('[data-edit]').addEventListener('click', ()=>{
+          // Load into form for quick editing
+          $('#exercises').innerHTML='';
+          $('#date').value = w.date; $('#note').value = w.note||'';
+          for(const e of w.exercises){
+            addExerciseUI();
+            const exEl = $$('#exercises [data-exercise]').pop();
+            const sel = $('[data-ex-name]', exEl);
+            const custom = $('[data-ex-custom]', exEl);
+            buildExerciseSelect(sel);
+            if(EXERCISES.includes(e.name)){ sel.value = e.name; custom.style.display='none'; custom.value=''; }
+            else { sel.value='__custom__'; custom.style.display=''; custom.value = e.name; }
+            const setsEl = $('[data-sets]', exEl); setsEl.innerHTML='';
+            for(const s of e.sets){
+              const row = $('#set-row-tpl').content.cloneNode(true);
+              const el = row.querySelector('[data-set]');
+              $('[data-reps]', el).value = s.reps;
+              $('[data-weight]', el).value = s.weight;
+              el.querySelector('[data-remove-set]').addEventListener('click', ()=> el.remove());
+              el.querySelector('[data-start-rest]').addEventListener('click', ()=>{
+                const customSec = Number($('#restCustom').value||0);
+                setDuration(customSec>0?customSec:Number($('#restPreset').value||60));
+                resetTimer(); startTimer();
+              });
+              setsEl.appendChild(row);
+            }
+          }
+          // remove original so Save replaces it
+          const all = load(); save(all.filter(x=>x.id!==w.id));
+          renderHistory();
+          window.scrollTo({top:0, behavior:'smooth'});
+        });
+        container.appendChild(root);
+      }
+      // After list render, update insights
+      drawVolumeChart(data);
+      renderPRs(data);
+    }
+
+    // ===== Metrics =====
+    function workoutVolume(w){
+      let vol = 0;
+      for(const e of w.exercises){ for(const s of e.sets){ vol += (Number(s.weight)||0) * (Number(s.reps)||0); } }
+      return Math.round(vol);
+    }
+    function estOneRM(weight, reps){
+      weight = Number(weight)||0; reps = Number(reps)||0;
+      if(reps<=1) return Math.round(weight);
+      const epley = weight * (1 + reps/30);
+      return Math.round(epley);
+    }
+
+    // Volume bar chart (canvas 2D, no libs)
+    function drawVolumeChart(data){
+      const cvs = $('#volCanvas'); if(!cvs) return;
+      const ctx = cvs.getContext('2d');
+      ctx.clearRect(0,0,cvs.width,cvs.height);
+      const pad = {l:40,r:16,t:10,b:36};
+      const innerW = cvs.width - pad.l - pad.r;
+      const innerH = cvs.height - pad.t - pad.b;
+      const workouts = data.slice().sort((a,b)=> a.date.localeCompare(b.date));
+      const vols = workouts.map(w=>workoutVolume(w));
+      const labels = workouts.map(w=>w.date.slice(5)); // MM-DD
+      const max = Math.max(10, ...vols);
+      // axes
+      ctx.strokeStyle = 'rgba(148,163,184,.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, pad.t+innerH); ctx.lineTo(pad.l+innerW, pad.t+innerH); ctx.stroke();
+      // y ticks
+      ctx.fillStyle = 'rgba(148,163,184,.9)';
+      ctx.font = '12px system-ui';
+      const ticks = 4;
+      for(let i=0;i<=ticks;i++){
+        const y = pad.t + innerH - (i/ticks)*innerH;
+        const val = Math.round((i/ticks)*max);
+        ctx.fillText(String(val), 6, y+4);
+        ctx.beginPath(); ctx.moveTo(pad.l-4, y); ctx.lineTo(pad.l, y); ctx.stroke();
+      }
+      if(vols.length===0) return;
+      // bars
+      const n = vols.length;
+      const bw = Math.max(10, Math.min(40, (innerW/(n||1))*0.6));
+      const gap = (innerW - n*bw) / Math.max(1, n-1);
+      let x = pad.l;
+      ctx.fillStyle = '#0ea5e9';
+      ctx.textAlign = 'center';
+      for(let i=0;i<n;i++){
+        const h = Math.round((vols[i]/max)*innerH);
+        const y = pad.t + innerH - h;
+        ctx.fillRect(x, y, bw, h);
+        // label
+        ctx.fillStyle = 'rgba(148,163,184,.9)';
+        ctx.fillText(labels[i]||'', x + bw/2, pad.t+innerH+18);
+        ctx.fillStyle = '#0ea5e9';
+        x += bw + gap;
+      }
+    }
+
+    function renderPRs(data){
+      // Build bests per exercise
+      const best = {}; // name -> {heaviest, oneRM, date}
+      for(const w of data){
+        for(const e of w.exercises){
+          const name = e.name;
+          if(!name) continue;
+          for(const s of e.sets){
+            const one = estOneRM(s.weight, s.reps);
+            if(!best[name]) best[name] = {heaviest:0, oneRM:0, dateHeaviest:'', dateOneRM:''};
+            if(Number(s.weight) > best[name].heaviest){ best[name].heaviest = Number(s.weight); best[name].dateHeaviest = w.date; }
+            if(one > best[name].oneRM){ best[name].oneRM = one; best[name].dateOneRM = w.date; }
+          }
+        }
+      }
+      const grid = $('#prGrid'); grid.innerHTML='';
+      const names = Object.keys(best).sort();
+      if(!names.length){ grid.innerHTML = '<div class="muted">No PRs yet — start logging workouts!</div>'; return; }
+      for(const n of names){
+        const item = document.createElement('div');
+        item.className = 'pr';
+        item.innerHTML = `<strong>${escapeHtml(n)}</strong>
+          <div class="row" style="gap:8px;margin-top:6px">
+            <div class="pill" title="Heaviest single set">Heaviest: ${best[n].heaviest}</div>
+            <div class="pill" title="Best estimated 1RM (Epley)">Est 1RM: ${best[n].oneRM}</div>
+          </div>
+          <div class="muted" style="margin-top:6px">On ${best[n].dateHeaviest || '–'} • ${best[n].dateOneRM && best[n].dateOneRM!==best[n].dateHeaviest ? '1RM on '+best[n].dateOneRM : ''}</div>`;
+        grid.appendChild(item);
+      }
+    }
+
+    // ===== App wiring =====
+    function resetForm(){ $('#date').value = todayISO(); $('#note').value=''; $('#exercises').innerHTML=''; addExerciseUI(); }
+    function onSave(){
+      const entry = gatherForm();
+      if(!entry.exercises.length){ alert('Please add at least one exercise with sets.'); return; }
+      const all = load(); all.push(entry); save(all);
+      resetForm(); renderHistory();
+    }
+    function onExport(){
+      const data = JSON.stringify(load(), null, 2);
+      const url = URL.createObjectURL(new Blob([data], {type:'application/json'}));
+      const a = document.createElement('a'); a.href = url; a.download = 'fittrack-data.json'; a.click(); URL.revokeObjectURL(url);
+    }
+    function onImport(file){
+      const reader = new FileReader();
+      reader.onload = () => {
+        try{
+          const parsed = JSON.parse(reader.result);
+          if(!Array.isArray(parsed)) throw new Error('Bad file');
+          save(parsed); renderHistory();
+        }catch(e){ alert('Invalid file'); }
+      };
+      reader.readAsText(file);
+    }
+    function confirmClear(){ if(confirm('Delete ALL workouts?')){ save([]); renderHistory(); } }
+    function installHelp(){ alert('On iPhone/iPad: open in Safari → Share → Add to Home Screen.\nOn Mac Safari: File → Add to Dock.'); }
+
+    document.addEventListener('DOMContentLoaded', ()=>{
+      $('#date').value = todayISO();
+      $('#addExerciseBtn').addEventListener('click', addExerciseUI);
+      $('#saveBtn').addEventListener('click', onSave);
+      $('#exportBtn').addEventListener('click', onExport);
+      $('#clearBtn').addEventListener('click', confirmClear);
+      $('#importInput').addEventListener('change', e=>{ if(e.target.files[0]) onImport(e.target.files[0]); e.target.value=''; });
+      $('#installHelp').addEventListener('click', e=>{e.preventDefault(); installHelp();});
+
+      // Rest timer controls
+      $('#restPreset').addEventListener('change', e=>{ if(!$('#restCustom').value) setDuration(e.target.value); });
+      $('#restStart').addEventListener('click', ()=>{ const customSec = Number($('#restCustom').value||0); setDuration(customSec>0?customSec:$('#restPreset').value); resetTimer(); startTimer(); });
+      $('#restPause').addEventListener('click', pauseTimer);
+      $('#restReset').addEventListener('click', resetTimer);
+      setDuration($('#restPreset').value);
+
+      addExerciseUI();
+      renderHistory();
+    });
+  </script>
+</body>
+</html>
